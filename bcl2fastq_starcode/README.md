@@ -1,0 +1,1 @@
+The code in this directory provides a docker image for running the bcl2fastq + starcode workflow used for the validation in Figure 3. It is license under the Apache v2.0. license (see LICENSE file).

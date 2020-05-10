@@ -5,7 +5,7 @@ SHELL := /bin/bash
 # VARIABLES
 
 # sequencing run ids
-# RUNS := $(shell find -L data/seq-runs -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
+# RUNS := $(shell find -L ../data/seq-runs -maxdepth 1 -mindepth 1 -type d -exec basename {} \;)
 RUNS := 200402_NB552046_0038_AHLHM2BGXF
 
 #===============================================================================
@@ -17,7 +17,7 @@ kb: $(addprefix pipeline/, $(addsuffix /kb.tsv, $(RUNS)))
 
 # cleanup
 clean:
-	rm -rf pipeline/* data/expected-amplicons.idx
+	rm -rf pipeline/* ../data/expected-amplicons.idx
 
 .PRECIOUS: $(addprefix pipeline/, %/conditions.csv %/starcode.csv %/output.bus %/kb.tsv)
 .SECONDARY:
@@ -25,7 +25,7 @@ clean:
 #===============================================================================
 # GET DATA!
 
-data/seq-runs/200402_NB552046_0038_AHLHM2BGXF:
+../data/seq-runs/200402_NB552046_0038_AHLHM2BGXF:
 	@mkdir -p $(@D)
 	@wget --save-cookies cookies.txt \
 	    'https://docs.google.com/uc?export=download&id=1GVhErh_LZm2R9m7LOCJouI7pN2bHhE4s'\
@@ -49,10 +49,10 @@ data/seq-runs/200402_NB552046_0038_AHLHM2BGXF:
 pipeline/%/bc-map.csv:
 	@echo "Grabbing $@"
 	@mkdir -p $(dir $@)
-	@cp data/barcode-map.csv $@
+	@cp ../data/barcode-map.csv $@
 
 # grab relevant section of samplesheet (make sure to catch windows return)
-pipeline/%/conditions.csv: data/plate-maps/%/SampleSheet.csv pipeline/%/bc-map.csv
+pipeline/%/conditions.csv: ../data/plate-maps/%/SampleSheet.csv pipeline/%/bc-map.csv
 	@echo "Parsing $<"
 	@python src/strip-windows.py $< \
 	    | awk '/index2/,0' \
@@ -62,7 +62,7 @@ pipeline/%/conditions.csv: data/plate-maps/%/SampleSheet.csv pipeline/%/bc-map.c
 # 1) Demultiplexing:
 # ------------------
 # starcode compatible demux
-pipeline/%/demux-starcode/demux: data/seq-runs/% data/plate-maps/%/SampleSheet.csv
+pipeline/%/demux-starcode/demux: ../data/seq-runs/% ../data/plate-maps/%/SampleSheet.csv
 	@echo "Demultiplexing all i5/i7 combos in $< for starcode"
 	@mkdir -p $(@D)
 	@bcl2fastq \
@@ -93,63 +93,3 @@ pipeline/%/starcode.csv: pipeline/%/demux-starcode/demux pipeline/%/conditions.c
 	| cat - $(@:.csv=.tmp) > $@ \
 	&& rm $(@:.csv=.tmp)
 
-
-#===============================================================================
-# KALLISTO PIPELINE
-# 1) Build Kallisto Index
-# 2) Have bcl2fastq pool everything into a single fastq
-# 3) Pseudo-align sequences to index
-# 4) Demultiplex based in i5/i7 and count
-
-# 1) Index:
-# ---------
-data/expected-amplicons.idx: data/expected-amplicons.fa
-	@echo "Building kallisto index on $<"
-	@kallisto index --kmer-size 11 --index $@ $< 2> $(@:.idx=.err)
-
-# 2) Pool into fastqs:
-# --------------------
-pipeline/%/demux-kallisto/demux: data/seq-runs/%
-	@echo "Demultiplexing $< for kallisto"
-	@mkdir -p $(@D)
-	@python src/run-bcl2fastq.py --threads 8 $< $(@D) 2> $(@D)/bcl2fastq.out \
-	    && touch $@
-
-# 3) Pseudo-align:
-# ----------------
-# run-kallisto.py takes: kallisto index, out_dir
-pipeline/%/output.bus: pipeline/%/demux-kallisto/demux data/expected-amplicons.idx
-	@echo "Pseudo-aligning reads with kallisto in $(<D)"
-	@mkdir -p $(@D)
-	@python src/run-kallisto.py \
-	    --index $(lastword $^) \
-	    --out-dir $(@D) \
-	    --threads 8 \
-	    $(<D)/*.fastq.gz \
-	    2> $(@D)/kallisto.err
-
-# 4) Demux and count:
-# -------------------
-#  1) build bustools whitelist (cat index/index2 together)
-#  2) sort and count reads aligning to our amplicons
-#  3) correct and demux indices on our whitelist with bustools
-pipeline/%/whitelist.txt: data/plate-maps/%/SampleSheet.csv
-	@echo "Building bustools whitelist from $<"
-	@awk '/index2/,0' $< \
-	    | mlr --headerless-csv-output --csv \
-	    put -e '$$barcode = $$index . $$index2' \
-	    then cut -f barcode \
-	    > $@
-
-# kallisto.counts.tsv is useful for debugging demux issues
-pipeline/%/kallisto.counts.bus: pipeline/%/output.bus
-	@echo "Generating Kallisto Counts for $<"
-	@bustools sort --threads 2 -o $@ $< 2> $(@:.bus=.err) \
-	    && bustools text -o $(@:.bus=.tsv) $@ 2>> $(@:.bus=.err)
-
-pipeline/%/kb.tsv: pipeline/%/kallisto.counts.bus pipeline/%/whitelist.txt
-	@echo "Using bustools to count barcodes in $(lastword $^)"
-	@bustools correct --split --pipe --whitelist $(lastword $^) $< 2>> $(@:.tsv=.err) \
-	    | bustools sort --threads 2 --pipe --temp $(@D)/tmp2 - 2>> $(@:.tsv=.err) \
-	    | bustools text --pipe - 2>> $(@:.tsv=.err) \
-	    > $@
