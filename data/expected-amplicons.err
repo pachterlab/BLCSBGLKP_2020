@@ -1,0 +1,8 @@
+
+[build] loading fasta file data/expected-amplicons.fa
+[build] k-mer length: 11
+[build] counting k-mers ... done.
+[build] building target de Bruijn graph ...  done 
+[build] creating equivalence classes ...  done
+[build] target de Bruijn graph has 5 contigs and contains 119 k-mers 
+
