@@ -9,6 +9,6 @@
       <Read NumCycles="26" Number="2" IsIndexedRead="N" />
       <Read NumCycles="8" Number="3" IsIndexedRead="Y" />
     </Reads>
-    <FlowcellLayout LaneCount="1" SurfaceCount="2" SwathCount="1" TileCount="14" />
+    <FlowcellLayout LaneCount="1" SurfaceCount="1" SwathCount="1" TileCount="3" />
   </Run>
 </RunInfo>
